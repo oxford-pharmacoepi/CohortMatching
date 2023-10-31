@@ -29,6 +29,7 @@ exactMatchingCohort <- function(cohort, matchSex = TRUE, matchYearBirth = TRUE, 
   # }
   #
   # checkmate::reportAssertions(collection = errorMessage)
+#  -----------------------------------------------------------------------------
 
     matchCols <- c()
   if(matchSex){
@@ -40,7 +41,7 @@ exactMatchingCohort <- function(cohort, matchSex = TRUE, matchYearBirth = TRUE, 
 
   # Cases
   cases <- cdm$person %>%
-    dplyr::select("person_id", dplyr::all_of(.env$matchCols)) %>%
+    dplyr::select("person_id", dplyr::any_of(.env$matchCols)) %>%
     dplyr::right_join(
       cohort %>%
         dplyr::select("person_id" = "subject_id"),
@@ -50,7 +51,7 @@ exactMatchingCohort <- function(cohort, matchSex = TRUE, matchYearBirth = TRUE, 
 
   # Controls
   controls <- cdm$person %>%
-    dplyr::select("person_id", dplyr::all_of(.env$matchCols)) %>%
+    dplyr::select("person_id", dplyr::any_of(.env$matchCols)) %>%
     dplyr::anti_join(
       cohort %>%
         dplyr::select("person_id" = "subject_id"),
@@ -94,7 +95,7 @@ exactMatchingCohort <- function(cohort, matchSex = TRUE, matchYearBirth = TRUE, 
       .data$index_date >= .data$observation_period_start_date,
       .data$index_date <= .data$observation_period_end_date
     ) %>%
-    dplyr::select("cases_id", "controls_id", "gender_concept_id", "year_of_birth")
+    dplyr::select("cases_id", "controls_id", dplyr::any_of(matchCols))
     return(matches)
 }
 

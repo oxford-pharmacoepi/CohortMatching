@@ -10,3 +10,4 @@ library(testthat)
 library(CohortMatching)
 
 test_check("CohortMatching")
+
