@@ -1,4 +1,4 @@
-
+#' @noRd
 exactMatchingCohort <- function(cdm,matchSex = TRUE, matchYearBirth = TRUE, matchPair = 1){
 
   matchCols <- c()
