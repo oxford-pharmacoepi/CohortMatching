@@ -36,7 +36,7 @@ exactMatchingCohort <- function(cdm,matchSex = TRUE, matchYearBirth = TRUE, matc
     dbplyr::window_order(.data$id) %>%
     dplyr::mutate(pair_id = dplyr::row_number()) %>%
     dbplyr::window_order() %>%
-    dplyr::select(-id)
+    dplyr::select(-.data$id)
 
   controls1 <- controls %>%
     dplyr::mutate(id = dbplyr::sql("random()")) %>%
@@ -44,7 +44,7 @@ exactMatchingCohort <- function(cdm,matchSex = TRUE, matchYearBirth = TRUE, matc
     dbplyr::window_order(.data$id) %>%
     dplyr::mutate(pair_id = dplyr::row_number()) %>%
     dbplyr::window_order() %>%
-    dplyr::select(-id)
+    dplyr::select(-.data$id)
 
   matches <- cases1 %>%
     dplyr::inner_join(controls1,
