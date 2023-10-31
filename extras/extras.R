@@ -1,5 +1,5 @@
 library(DrugUtilisation)
-
+devtools::load_all()
 cdm <- DrugUtilisation::mockDrugUtilisation(numberIndividuals = 200)
 
 followback  <- 180

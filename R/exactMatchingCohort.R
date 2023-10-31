@@ -1,6 +1,33 @@
 #' @noRd
-exactMatchingCohort <- function(cdm,matchSex = TRUE, matchYearBirth = TRUE, matchPair = 1){
+exactMatchingCohort <- function(cohort,matchSex = TRUE, matchYearBirth = TRUE, matchPair = 1){
 
+# ERROR MESSAGES ---------------------------------------------------------------
+  errorMessage <- checkmate::makeAssertCollection()
+  # Check cohort class
+  data_check   <- class(cohort) == "cdm_reference"
+  checkmate::assertTRUE(data_check, add = errorMessage)
+  if(!isTRUE(data_check)){
+    errorMessage$push(glue::glue("- {cohort} is not a cdm object"))
+  }
+  # Check if cohort has person_id, observation_period, and cases tables "cases"
+  person_check <- "person" %in% names(cohort)
+  checkmate::assertTRUE(person_check, add = errorMessage)
+  if(!isTRUE(person_check)){
+    errorMessage$push(glue::glue("- {cohort} has not table named 'person'"))
+  }
+  observation_period_check <- "observation_period" %in% names(cohort)
+  checkmate::assertTRUE(observation_period_check , add = errorMessage)
+  if(!isTRUE(observation_period_check)){
+    errorMessage$push(glue::glue("- {cohort} has not table named 'observation_period'"))
+  }
+  cases_check <- "cases" %in% names(cohort)
+  checkmate::assertTRUE(cases_check, add = errorMessage)
+  if(!isTRUE(cases_check)){
+    errorMessage$push(glue::glue("- {cohort} has not table named 'cases'"))
+  }
+
+  checkmate::reportAssertions(collection = errorMessage)
+# ------------------------------------------------------------------------------
   matchCols <- c()
   if(matchSex){
     matchCols <- append(matchCols, "gender_concept_id")
@@ -10,20 +37,20 @@ exactMatchingCohort <- function(cdm,matchSex = TRUE, matchYearBirth = TRUE, matc
   }
 
   # Cases
-  cases <- cdm$person %>%
+  cases <- cohort$person %>%
     dplyr::select(.data$person_id, dplyr::all_of(.env$matchCols)) %>%
     dplyr::right_join(
-      cdm$cases %>%
+      cohort$cases %>%
         dplyr::select(person_id = .data$subject_id),
       by = "person_id"
     ) %>%
     dplyr::rename(cases_id = .data$person_id)
 
   # Controls
-  controls <- cdm$person %>%
+  controls <- cohort$person %>%
     dplyr::select(.data$person_id, dplyr::all_of(.env$matchCols)) %>%
     dplyr::anti_join(
-      cdm$cases %>%
+      cohort$cases %>%
         dplyr::select(person_id = .data$subject_id),
       by = "person_id"
     ) %>%
@@ -52,12 +79,12 @@ exactMatchingCohort <- function(cdm,matchSex = TRUE, matchYearBirth = TRUE, matc
     ) %>%
     # Remove those pairs where the control individual was not in observation at index date
     dplyr::left_join(
-      cdm$observation_period %>%
+      cohort$observation_period %>%
         dplyr::select(controls_id = .data$person_id, .data$observation_period_start_date, .data$observation_period_end_date),
       by = "controls_id"
     ) %>%
     dplyr::left_join(
-      cdm$cases %>%
+      cohort$cases %>%
         dplyr::select(cases_id = .data$subject_id, index_date = .data$cohort_start_date),
       by = "cases_id"
     ) %>%
