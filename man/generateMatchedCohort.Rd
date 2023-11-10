@@ -6,11 +6,11 @@
 \usage{
 generateMatchedCohort(
   cdm,
-  name = "NewCohort",
+  name,
   targetCohortName,
   targetCohortId = NULL,
   matchSex = TRUE,
-  matchYear = TRUE,
+  matchYearOfBirth = TRUE,
   ratio = 1
 )
 }
@@ -25,7 +25,7 @@ generateMatchedCohort(
 
 \item{matchSex}{can be TRUE or FALSE}
 
-\item{matchYear}{can be TRUE or FALSE}
+\item{matchYearOfBirth}{can be TRUE or FALSE}
 
 \item{ratio}{at the moment, it is not used this argument}
 }

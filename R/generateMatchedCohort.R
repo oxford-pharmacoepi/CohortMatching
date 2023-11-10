@@ -5,7 +5,7 @@
 #' @param targetCohortName Name of the target cohort to match
 #' @param targetCohortId cohort_definition_id of interest. If it is NULL, all the cohort_definition_id present in the cohort will be matched
 #' @param matchSex can be TRUE or FALSE
-#' @param matchYear can be TRUE or FALSE
+#' @param matchYearOfBirth can be TRUE or FALSE
 #' @param ratio at the moment, it is not used this argument
 #'
 #' @return plot
@@ -14,11 +14,11 @@
 #' @examples
 
 generateMatchedCohort <- function(cdm,
-                                  name = "NewCohort",
+                                  name,
                                   targetCohortName,
                                   targetCohortId = NULL,
                                   matchSex = TRUE,
-                                  matchYear = TRUE,
+                                  matchYearOfBirth = TRUE,
                                   ratio = 1){
   # Check inputs ---------------------------------------------------------------
   errorMessage <- checkmate::makeAssertCollection()
@@ -77,7 +77,7 @@ generateMatchedCohort <- function(cdm,
                              targetCohortName = targetCohortName,
                              targetCohortId   = targetCohortId,
                              matchSex  = matchSex,
-                             matchYear = matchYear,
+                             matchYearOfBirth = matchYearOfBirth,
                              ratio = ratio)
 
   # Return

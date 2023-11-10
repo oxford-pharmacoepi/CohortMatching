@@ -27,7 +27,7 @@ test_that("generateMatchedCohort", {
                                         targetCohortName = "cohort",
                                         targetCohortId = NULL,
                                         matchSex = TRUE,
-                                        matchYear = TRUE,
+                                        matchYearOfBirth = TRUE,
                                         ratio = 1))
 
 })

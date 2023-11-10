@@ -1,10 +1,10 @@
 #' @noRd
 exactMatchingCohort <- function(cdm,
-                                name = "NewCohort",
+                                name,
                                 targetCohortName,
                                 targetCohortId = NULL,
                                 matchSex  = TRUE,
-                                matchYear = TRUE,
+                                matchYearOfBirth = TRUE,
                                 ratio = 1){
 
   cohort <- cdm[[targetCohortName]]
@@ -26,7 +26,7 @@ exactMatchingCohort <- function(cdm,
   if(matchSex){
     matchCols <- append(matchCols, "gender_concept_id")
   }
-  if(matchYear){
+  if(matchYearOfBirth){
     matchCols <- append(matchCols, "year_of_birth")
   }
 
@@ -101,7 +101,6 @@ exactMatchingCohort <- function(cdm,
     dplyr::ungroup() %>%
     dplyr::select("cases_id", "controls_id", "cohort_definition_id", "cohort_start_date","cohort_end_date")
 
-
   # Format output
   cohort_ref <- matches %>%
     dplyr::select(-.data$controls_id) %>%
@@ -112,7 +111,10 @@ exactMatchingCohort <- function(cdm,
         dplyr::rename("subject_id" = "controls_id") %>%
         dplyr::mutate(cohort_definition_id = .data$cohort_definition_id + 0.5)
     ) %>%
-    CDMConnector::compute_query()
+    CDMConnector::compute_query(temporary = FALSE,
+                                schema    = attr(cdm, "write_schema"),
+                                name      = name,
+                                overwrite = TRUE)
 
   cohort_set_ref <- cohort_set_ref %>%
     dplyr::select("cohort_definition_id", "cohort_name") %>%
@@ -124,10 +126,22 @@ exactMatchingCohort <- function(cdm,
     )
 
   newCohort <- CDMConnector::newGeneratedCohortSet(
-    cohortRef = cohort_ref,
+    cohortRef    = cohort_ref,
     cohortSetRef = cohort_set_ref,
-    overwrite = TRUE
-  )
+    overwrite    = TRUE
+  ) %>%
+    dplyr::mutate(target_cohort_name  = .env$name) %>%
+    dplyr::mutate(match_sex           = .env$matchSex) %>%
+    dplyr::mutate(match_year_of_birth = .env$matchYearOfBirth) %>%
+    dplyr::mutate(match_status        = dplyr::if_else(grepl(".5",.data$cohort_definition_id),
+                                                       "matched",
+                                                       "target")) %>%
+    dplyr::mutate("target_cohort_id" = floor(.data$cohort_definition_id))
+
+  newCohort <- newCohort %>%
+    dplyr::left_join(
+      attr(newCohort,"cohort_set"), by = "cohort_definition_id"
+    )
 
   cdm[[name]] <- newCohort
   return(cdm)
