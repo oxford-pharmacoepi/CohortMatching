@@ -91,8 +91,8 @@ exactMatchingCohort <- function(cdm,
     ) %>%
     dplyr::left_join(
       cohort %>%
-        dplyr::select("cases_id" = "subject_id", "cohort_start_date","cohort_end_date"),
-      by = "cases_id"
+        dplyr::select("cases_id" = "subject_id", "cohort_start_date","cohort_end_date","cohort_definition_id"),
+      by = c("cases_id","cohort_definition_id")
     ) %>%
     dplyr::filter(
       .data$cohort_start_date >= .data$observation_period_start_date,
