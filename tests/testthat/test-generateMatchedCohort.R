@@ -7,11 +7,10 @@ test_that("generateMatchedCohort", {
     name = "cases",
     end  = "observation_period_end_date",
     requiredObservation = c(followback,followback),
-    overwrite = TRUE
-  )
+    overwrite = TRUE)
 
   expect_no_error(generateMatchedCohort(cdm,
-                                        name = "NewCohort",
+                                        name = "newCohort",
                                         targetCohortName = "cases"))
 
   # Run without errors (simple example, with two cohorts)
@@ -24,7 +23,7 @@ test_that("generateMatchedCohort", {
     overwrite = TRUE
   )
   expect_no_error(generateMatchedCohort(cdm,
-                                        name = "NewCohort1",
+                                        name = "newCohort",
                                         targetCohortName = "cohort",
                                         targetCohortId = NULL,
                                         matchSex = TRUE,
@@ -45,7 +44,7 @@ test_that("generateMatchedCohort, no duplicated people within a cohort", {
     overwrite = TRUE
   )
   a <- generateMatchedCohort(cdm,
-                             name = "NewCohort1",
+                             name = "newCohort",
                              targetCohortName = "cohort",
                              targetCohortId = NULL,
                              matchSex = TRUE,

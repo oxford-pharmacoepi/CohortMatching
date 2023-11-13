@@ -36,7 +36,7 @@ test_that("test exactMatchingCohort works if one is true and the other one false
   expect_no_error(
     exactMatchingCohort(
       cdm,
-      name = "NewCohort",
+      name = "newCohort",
       targetCohortName = "cases",
       matchSex = TRUE,
       matchYearOfBirth = FALSE
@@ -46,7 +46,7 @@ test_that("test exactMatchingCohort works if one is true and the other one false
   expect_no_error(
     exactMatchingCohort(
       cdm,
-      name = "NewCohort",
+      name = "newCohort",
       targetCohortName = "cases",
       matchSex = FALSE,
       matchYearOfBirth = TRUE
@@ -56,7 +56,7 @@ test_that("test exactMatchingCohort works if one is true and the other one false
   expect_no_error(
     exactMatchingCohort(
       cdm,
-      name = "NewCohort",
+      name = "newCohort",
       targetCohortName = "cases",
       matchSex = FALSE,
       matchYearOfBirth = FALSE
@@ -80,7 +80,7 @@ test_that("test exactMatchingCohort works if there are no subjects", {
   expect_no_error(
     exactMatchingCohort(
       cdm,
-      name = "NewCohort",
+      name = "newCohort",
       targetCohortName = "cases",
     )
   )
