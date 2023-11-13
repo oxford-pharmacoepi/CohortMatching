@@ -10,7 +10,7 @@ test_that("generateMatchedCohort", {
     overwrite = TRUE)
 
   expect_no_error(generateMatchedCohort(cdm,
-                                        name = "newCohort",
+                                        name = "new_cohort",
                                         targetCohortName = "cases"))
 
   # Run without errors (simple example, with two cohorts)
@@ -23,7 +23,7 @@ test_that("generateMatchedCohort", {
     overwrite = TRUE
   )
   expect_no_error(generateMatchedCohort(cdm,
-                                        name = "newCohort",
+                                        name = "new_cohort",
                                         targetCohortName = "cohort",
                                         targetCohortId = NULL,
                                         matchSex = TRUE,
@@ -44,15 +44,15 @@ test_that("generateMatchedCohort, no duplicated people within a cohort", {
     overwrite = TRUE
   )
   a <- generateMatchedCohort(cdm,
-                             name = "newCohort",
+                             name = "new_cohort",
                              targetCohortName = "cohort",
                              targetCohortId = NULL,
                              matchSex = TRUE,
                              matchYearOfBirth = TRUE,
                              ratio = 1)
 
-  p1 <- a$NewCohort1 %>%
-    dplyr::filter(cohort_name == "asthma") %>%
+  p1 <- a$new_cohort %>%
+    dplyr::filter(cohort_definition_id == 1) %>%
     dplyr::select(subject_id) %>%
     dplyr::pull() %>%
     length()
