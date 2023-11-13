@@ -25,7 +25,23 @@ test_that("generateMatchedCohort", {
   expect_no_error(generateMatchedCohort(cdm,
                                         name = "new_cohort",
                                         targetCohortName = "cohort",
+                                        targetCohortId = 1,
+                                        matchSex = TRUE,
+                                        matchYearOfBirth = TRUE,
+                                        ratio = 1))
+
+  expect_no_error(generateMatchedCohort(cdm,
+                                        name = "new_cohort",
+                                        targetCohortName = "cohort",
                                         targetCohortId = NULL,
+                                        matchSex = TRUE,
+                                        matchYearOfBirth = TRUE,
+                                        ratio = 1))
+
+  expect_no_error(generateMatchedCohort(cdm,
+                                        name = "new_cohort",
+                                        targetCohortName = "cohort",
+                                        targetCohortId = c(1,2),
                                         matchSex = TRUE,
                                         matchYearOfBirth = TRUE,
                                         ratio = 1))
@@ -43,6 +59,7 @@ test_that("generateMatchedCohort, no duplicated people within a cohort", {
     requiredObservation = c(followback,followback),
     overwrite = TRUE
   )
+
   a <- generateMatchedCohort(cdm,
                              name = "new_cohort",
                              targetCohortName = "cohort",
@@ -50,6 +67,7 @@ test_that("generateMatchedCohort, no duplicated people within a cohort", {
                              matchSex = TRUE,
                              matchYearOfBirth = TRUE,
                              ratio = 1)
+
 
   p1 <- a$new_cohort %>%
     dplyr::filter(cohort_definition_id == 1) %>%

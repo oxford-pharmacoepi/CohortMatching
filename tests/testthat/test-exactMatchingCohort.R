@@ -1,5 +1,4 @@
 test_that("test exactMatchingCohort works if all are true", {
-
   followback  <- 180
   cdm <- DrugUtilisation::generateConceptCohortSet(
     cdm = DrugUtilisation::mockDrugUtilisation(numberIndividuals = 200),
@@ -17,12 +16,9 @@ test_that("test exactMatchingCohort works if all are true", {
       targetCohortName = "cases"
     )
   )
-
 })
 
 test_that("test exactMatchingCohort works if one is true and the other one false", {
-
-
   followback  <- 180
   cdm <- DrugUtilisation::generateConceptCohortSet(
     cdm = DrugUtilisation::mockDrugUtilisation(numberIndividuals = 200),
@@ -62,8 +58,6 @@ test_that("test exactMatchingCohort works if one is true and the other one false
       matchYearOfBirth = FALSE
     )
   )
-
-
 })
 
 test_that("test exactMatchingCohort works if there are no subjects", {
