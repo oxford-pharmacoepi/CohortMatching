@@ -7,11 +7,10 @@ test_that("generateMatchedCohort", {
     name = "cases",
     end  = "observation_period_end_date",
     requiredObservation = c(followback,followback),
-    overwrite = TRUE
-  )
+    overwrite = TRUE)
 
   expect_no_error(generateMatchedCohort(cdm,
-                                        name = "NewCohort",
+                                        name = "new_cohort",
                                         targetCohortName = "cases"))
 
   # Run without errors (simple example, with two cohorts)
@@ -24,9 +23,25 @@ test_that("generateMatchedCohort", {
     overwrite = TRUE
   )
   expect_no_error(generateMatchedCohort(cdm,
-                                        name = "NewCohort1",
+                                        name = "new_cohort",
+                                        targetCohortName = "cohort",
+                                        targetCohortId = 1,
+                                        matchSex = TRUE,
+                                        matchYearOfBirth = TRUE,
+                                        ratio = 1))
+
+  expect_no_error(generateMatchedCohort(cdm,
+                                        name = "new_cohort",
                                         targetCohortName = "cohort",
                                         targetCohortId = NULL,
+                                        matchSex = TRUE,
+                                        matchYearOfBirth = TRUE,
+                                        ratio = 1))
+
+  expect_no_error(generateMatchedCohort(cdm,
+                                        name = "new_cohort",
+                                        targetCohortName = "cohort",
+                                        targetCohortId = c(1,2),
                                         matchSex = TRUE,
                                         matchYearOfBirth = TRUE,
                                         ratio = 1))
@@ -44,16 +59,18 @@ test_that("generateMatchedCohort, no duplicated people within a cohort", {
     requiredObservation = c(followback,followback),
     overwrite = TRUE
   )
+
   a <- generateMatchedCohort(cdm,
-                             name = "NewCohort1",
+                             name = "new_cohort",
                              targetCohortName = "cohort",
                              targetCohortId = NULL,
                              matchSex = TRUE,
                              matchYearOfBirth = TRUE,
                              ratio = 1)
 
-  p1 <- a$NewCohort1 %>%
-    dplyr::filter(cohort_name == "asthma") %>%
+
+  p1 <- a$new_cohort %>%
+    dplyr::filter(cohort_definition_id == 1) %>%
     dplyr::select(subject_id) %>%
     dplyr::pull() %>%
     length()
