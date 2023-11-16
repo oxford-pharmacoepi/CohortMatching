@@ -79,3 +79,4 @@ test_that("test exactMatchingCohort works if there are no subjects", {
     )
   )
 })
+
