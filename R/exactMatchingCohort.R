@@ -7,12 +7,13 @@ exactMatchingCohort <- function(cdm,
                                 matchYearOfBirth = TRUE,
                                 ratio = 1){
 
+
   cohort <- cdm[[targetCohortName]]
 
   #  Attrition set-up
   n <- cohort %>%
     dplyr::summarise(v = max(.data$cohort_definition_id)) %>%
-    dplyr::pull()
+    dplyr::pull() # number of different cohorts
 
   if(is.na(n)){
     # Empty table
@@ -60,8 +61,6 @@ exactMatchingCohort <- function(cdm,
       dplyr::arrange(.data$cohort_definition_id)
     targetCohortId    <- cohort_set_ref$cohort_definition_id
   }
-
-
 
   # Obtain matched columns
   matchCols <- c()
@@ -123,7 +122,8 @@ exactMatchingCohort <- function(cdm,
     dbplyr::window_order(.data$id) %>%
     dplyr::mutate(pair_id = dplyr::row_number()) %>%
     dbplyr::window_order() %>%
-    dplyr::select(-.data$id)
+    dplyr::select(-"id") %>%
+    CDMConnector::computeQuery()
 
   controls1 <- controls %>%
     dplyr::mutate(id = dbplyr::sql("random()")) %>%
@@ -131,14 +131,55 @@ exactMatchingCohort <- function(cdm,
     dbplyr::window_order(.data$id) %>%
     dplyr::mutate(pair_id = dplyr::row_number()) %>%
     dbplyr::window_order() %>%
-    dplyr::select(-.data$id)
+    dplyr::select(-"id")%>%
+    CDMConnector::computeQuery()
+
+  if((controls1 %>% dplyr::ungroup() %>% dplyr::tally() %>% dplyr::pull()) <
+     (cases1 %>% dplyr::ungroup() %>% dplyr::tally() %>% dplyr::pull())){
+    warning("Number of cases is higher than number of controls. Ratio is set to 1.")
+    ratio <- 1
+  }
 
   matches <- cases1 %>%
     dplyr::inner_join(
       controls1,
       by = c("pair_id","cohort_definition_id", matchCols)
-    ) %>%
-    CDMConnector::computeQuery()
+    )
+
+  # If ratio is not one, it works, but is not necessary do it as matches1 = matches
+  if(ratio != 1){
+    matches_1 <- matches %>%
+      dplyr::mutate(max_cases = max(.data$pair_id)) %>%
+      dplyr::select(-"cases_id") %>%
+      dplyr::right_join(
+        controls1,
+        by = c("pair_id", "cohort_definition_id", "gender_concept_id", "year_of_birth", "controls_id")
+      ) %>%
+      dplyr::mutate(max_cases =
+                      dplyr::if_else(is.na(.data$max_cases), max(.data$max_cases, na.rm = TRUE), .data$max_cases)
+      ) %>%
+      dplyr::filter(!is.na(.data$max_cases)) %>% # No matching
+      dplyr::mutate(pair_id1 =
+                      dplyr::if_else(.data$max_cases < .data$pair_id,
+                                     .data$pair_id - .data$max_cases*(ratio-1),
+                                     .data$pair_id)) %>%
+      dplyr::mutate(pair_id = .data$pair_id1) %>%
+      dplyr::select(-"pair_id1", -"max_cases") %>%
+      dplyr::inner_join(
+        cases1,
+        by = c("pair_id", "cohort_definition_id", !!matchCols)
+      ) %>%
+      dplyr::union_all(
+        matches
+      ) %>%
+      dplyr::distinct()
+
+    matches <- matches_1 %>%
+      CDMConnector::compute_query()
+  }else{
+    matches <- matches %>%
+      CDMConnector::compute_query()
+  }
 
   #  Attrition set-up - Controls
   cdm[["controls_temporal_table"]] <- cdm[["controls_temporal_table"]] %>%
@@ -205,11 +246,11 @@ exactMatchingCohort <- function(cdm,
 
   # Cohort object --------------------------------------------------------------
   cohort_ref <- matches1 %>%
-    dplyr::select(-.data$controls_id) %>%
+    dplyr::select(-"controls_id") %>%
     dplyr::rename("subject_id" = "cases_id") %>%
     dplyr::union_all(
       matches1 %>%
-        dplyr::select(-.data$cases_id) %>%
+        dplyr::select(-"cases_id") %>%
         dplyr::rename("subject_id" = "controls_id") %>%
         dplyr::mutate(cohort_definition_id = .data$cohort_definition_id + 0.5)
     )

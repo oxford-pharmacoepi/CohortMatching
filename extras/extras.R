@@ -2,7 +2,7 @@ rm(list = ls())
 library("magrittr")
 # Variables ====================================================================
 cdm <- DrugUtilisation::generateConceptCohortSet(
-  cdm = DrugUtilisation::mockDrugUtilisation(numberIndividuals = 100),
+  cdm = DrugUtilisation::mockDrugUtilisation(numberIndividuals = 750),
   conceptSet = list(asthma = 317009, other = 432526),
   name = "cases",
   end  = "observation_period_end_date",
@@ -21,4 +21,9 @@ ratio <- 1
 
 
 # Function =====================================================================
+
+
+
+
+
 
