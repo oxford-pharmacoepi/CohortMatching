@@ -4,12 +4,17 @@
 \name{CohortMatching-package}
 \alias{CohortMatching}
 \alias{CohortMatching-package}
-\title{CohortMatching: What the Package Does (One Line, Title Case)}
+\title{CohortMatching: Create Matched Generated Cohorts in the OMOP Common Data Model}
 \description{
-What the package does (one paragraph).
+This package provide functions and tools to create matched cohorts using the OMOP Common Data Model.
 }
 \author{
-\strong{Maintainer}: First Last \email{first.last@example.com} (\href{https://orcid.org/YOUR-ORCID-ID}{ORCID})
+\strong{Maintainer}: Marta Alcalde-Herraiz \email{marta.alcaldeherraiz@ndorms.ox.ac.uk}
+
+Authors:
+\itemize{
+  \item Marti Catala \email{marti.catalasabate@ndorms.ox.ac.uk} (\href{https://orcid.org/0000-0003-3308-9905}{ORCID})
+}
 
 }
 \keyword{internal}
