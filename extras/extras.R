@@ -15,15 +15,11 @@ targetCohortName <- "cases"
 targetCohortId <- NULL
 matchSex <- TRUE
 matchYearOfBirth <- TRUE
-ratio <- 1
+ratio <- Inf
 
 
 
 
 # Function =====================================================================
-
-
-
-
 
 
