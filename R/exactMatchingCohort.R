@@ -8,6 +8,7 @@ exactMatchingCohort <- function(cdm,
                                 ratio = 1){
 
 
+
   cohort <- cdm[[targetCohortName]]
 
   #  Attrition set-up
@@ -158,13 +159,21 @@ exactMatchingCohort <- function(cdm,
       dplyr::mutate(max_cases =
                       dplyr::if_else(is.na(.data$max_cases), max(.data$max_cases, na.rm = TRUE), .data$max_cases)
       ) %>%
-      dplyr::filter(!is.na(.data$max_cases)) %>% # No matching
+      dplyr::filter(!is.na(.data$max_cases)) # No matching
+    if(ratio == "Inf"){
+      matches_1 <- matches_1 %>%
+        dplyr::mutate(ratio = max(.data$pair_id)/.data$max_cases)
+    }else{
+      matches_1 <- matches_1 %>%
+        dplyr::mutate(ratio = .env$ratio)
+    }
+    matches_1 <- matches_1 %>%
       dplyr::mutate(pair_id1 =
                       dplyr::if_else(.data$max_cases < .data$pair_id,
-                                     .data$pair_id - .data$max_cases*(ratio-1),
+                                     .data$pair_id - .data$max_cases*(.data$ratio-1),
                                      .data$pair_id)) %>%
       dplyr::mutate(pair_id = .data$pair_id1) %>%
-      dplyr::select(-"pair_id1", -"max_cases") %>%
+      dplyr::select(-"pair_id1", -"max_cases", -"ratio") %>%
       dplyr::inner_join(
         cases1,
         by = c("pair_id", "cohort_definition_id", !!matchCols)
@@ -308,6 +317,7 @@ exactMatchingCohort <- function(cdm,
   )
 
   cdm[[name]] <- new_cohort
+
 
 
   return(cdm)
