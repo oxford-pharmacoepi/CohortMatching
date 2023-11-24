@@ -16,13 +16,13 @@
 #'
 #' @export
 #'
-generateMatchedCohort <- function(cdm,
-                                  name,
-                                  targetCohortName,
-                                  targetCohortId = NULL,
-                                  matchSex = TRUE,
-                                  matchYearOfBirth = TRUE,
-                                  ratio = 1){
+generateMatchedCohortSet <- function(cdm,
+                                     name,
+                                     targetCohortName,
+                                     targetCohortId = NULL,
+                                     matchSex = TRUE,
+                                     matchYearOfBirth = TRUE,
+                                     ratio = 1){
   # validate initial input
   validateInput(
     cdm = cdm, name = name, targetCohortName = targetCohortName,
