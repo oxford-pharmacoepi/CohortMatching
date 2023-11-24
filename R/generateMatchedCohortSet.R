@@ -1,3 +1,70 @@
+#' Generate a new cohort matched cohort from a preexisting target cohort. The
+#' new cohort will contain individuals not included in the target cohort with
+#' same year of birth (matchYearOfBirth = TRUE) and same sex (matchSex = TRUE).
+#'
+#' @param cdm A cdm reference object.
+#' @param name Name of the new generated cohort set.
+#' @param targetCohortName Name of the target cohort to match.
+#' @param targetCohortId Cohort definition id to match from the target cohort.
+#' If NULL all the cohort definition id present in the target cohort will be
+#' matched.
+#' @param matchSex Whether to match in sex.
+#' @param matchYearOfBirth Whether to match in year of birth.
+#' @param ratio Number of allowed matches per individual in the target cohort.
+#'
+#' @return A cdm reference object that containd the new generated cohort set.
+#'
+#' @export
+#'
+generateMatchedCohort <- function(cdm,
+                                  name,
+                                  targetCohortName,
+                                  targetCohortId = NULL,
+                                  matchSex = TRUE,
+                                  matchYearOfBirth = TRUE,
+                                  ratio = 1){
+  # validate initial input
+  validateInput(
+    cdm = cdm, name = name, targetCohortName = targetCohortName,
+    targetCohortId = targetCohortId, matchSex = matchSex,
+    matchYearOfBirth = matchYearOfBirth, ratio = ratio
+  )
+
+  # table prefix
+  tablePrefix <- randomPrefix()
+
+  # check there are individuals
+
+  # get targetCohortId
+
+  # background candidates
+
+  # cols to match
+
+  # get cases
+
+  # get controls
+
+  # match pairs
+
+  # output a cohort object
+
+  # Check
+  cdm <- exactMatchingCohort(cdm  = cdm,
+                             name = name,
+                             targetCohortName = targetCohortName,
+                             targetCohortId   = targetCohortId,
+                             matchSex  = matchSex,
+                             matchYearOfBirth = matchYearOfBirth,
+                             ratio = ratio)
+
+  # Delete permanent tables
+  CDMConnector::dropTable(cdm = cdm, name = dplyr::starts_with(tablePrefix))
+
+  # Return
+  return(cdm)
+}
+
 #' @noRd
 exactMatchingCohort <- function(cdm,
                                 name,
@@ -6,13 +73,12 @@ exactMatchingCohort <- function(cdm,
                                 matchSex  = TRUE,
                                 matchYearOfBirth = TRUE,
                                 ratio = 1){
-
   cohort <- cdm[[targetCohortName]]
 
   #  Attrition set-up
   n <- cohort %>%
     dplyr::summarise(v = max(.data$cohort_definition_id)) %>%
-    dplyr::pull()
+    dplyr::pull() # number of different cohorts
 
   if(is.na(n)){
     # Empty table
@@ -60,8 +126,6 @@ exactMatchingCohort <- function(cdm,
       dplyr::arrange(.data$cohort_definition_id)
     targetCohortId    <- cohort_set_ref$cohort_definition_id
   }
-
-
 
   # Obtain matched columns
   matchCols <- c()
@@ -123,7 +187,8 @@ exactMatchingCohort <- function(cdm,
     dbplyr::window_order(.data$id) %>%
     dplyr::mutate(pair_id = dplyr::row_number()) %>%
     dbplyr::window_order() %>%
-    dplyr::select(-.data$id)
+    dplyr::select(-"id") %>%
+    CDMConnector::computeQuery()
 
   controls1 <- controls %>%
     dplyr::mutate(id = dbplyr::sql("random()")) %>%
@@ -131,14 +196,63 @@ exactMatchingCohort <- function(cdm,
     dbplyr::window_order(.data$id) %>%
     dplyr::mutate(pair_id = dplyr::row_number()) %>%
     dbplyr::window_order() %>%
-    dplyr::select(-.data$id)
+    dplyr::select(-"id")%>%
+    CDMConnector::computeQuery()
+
+  if((controls1 %>% dplyr::ungroup() %>% dplyr::tally() %>% dplyr::pull()) <
+     (cases1 %>% dplyr::ungroup() %>% dplyr::tally() %>% dplyr::pull())){
+    warning("Number of cases is higher than number of controls. Ratio is set to 1.")
+    ratio <- 1
+  }
 
   matches <- cases1 %>%
     dplyr::inner_join(
       controls1,
       by = c("pair_id","cohort_definition_id", matchCols)
-    ) %>%
-    CDMConnector::computeQuery()
+    )
+
+  # If ratio is not one, it works, but is not necessary do it as matches1 = matches
+  if(ratio != 1){
+    matches_1 <- matches %>%
+      dplyr::mutate(max_cases = max(.data$pair_id)) %>%
+      dplyr::select(-"cases_id") %>%
+      dplyr::right_join(
+        controls1,
+        by = c("pair_id", "cohort_definition_id", "gender_concept_id", "year_of_birth", "controls_id")
+      ) %>%
+      dplyr::mutate(max_cases =
+                      dplyr::if_else(is.na(.data$max_cases), max(.data$max_cases, na.rm = TRUE), .data$max_cases)
+      ) %>%
+      dplyr::filter(!is.na(.data$max_cases)) # No matching
+    if(ratio == "Inf"){
+      matches_1 <- matches_1 %>%
+        dplyr::mutate(ratio = max(.data$pair_id)/.data$max_cases)
+    }else{
+      matches_1 <- matches_1 %>%
+        dplyr::mutate(ratio = .env$ratio)
+    }
+    matches_1 <- matches_1 %>%
+      dplyr::mutate(pair_id1 =
+                      dplyr::if_else(.data$max_cases < .data$pair_id,
+                                     .data$pair_id - .data$max_cases*(.data$ratio-1),
+                                     .data$pair_id)) %>%
+      dplyr::mutate(pair_id = .data$pair_id1) %>%
+      dplyr::select(-"pair_id1", -"max_cases", -"ratio") %>%
+      dplyr::inner_join(
+        cases1,
+        by = c("pair_id", "cohort_definition_id", !!matchCols)
+      ) %>%
+      dplyr::union_all(
+        matches
+      ) %>%
+      dplyr::distinct()
+
+    matches <- matches_1 %>%
+      CDMConnector::compute_query()
+  }else{
+    matches <- matches %>%
+      CDMConnector::compute_query()
+  }
 
   #  Attrition set-up - Controls
   cdm[["controls_temporal_table"]] <- cdm[["controls_temporal_table"]] %>%
@@ -205,11 +319,11 @@ exactMatchingCohort <- function(cdm,
 
   # Cohort object --------------------------------------------------------------
   cohort_ref <- matches1 %>%
-    dplyr::select(-.data$controls_id) %>%
+    dplyr::select(-"controls_id") %>%
     dplyr::rename("subject_id" = "cases_id") %>%
     dplyr::union_all(
       matches1 %>%
-        dplyr::select(-.data$cases_id) %>%
+        dplyr::select(-"cases_id") %>%
         dplyr::rename("subject_id" = "controls_id") %>%
         dplyr::mutate(cohort_definition_id = .data$cohort_definition_id + 0.5)
     )
@@ -269,6 +383,69 @@ exactMatchingCohort <- function(cdm,
   cdm[[name]] <- new_cohort
 
 
+
   return(cdm)
 }
-
+validateInput <- function(cdm,
+                          name,
+                          targetCohortName,
+                          targetCohortId,
+                          matchSex,
+                          matchYearOfBirth,
+                          ratio) {
+  errorMessage <- checkmate::makeAssertCollection()
+  # Check cdm class
+  data_check   <- any("cdm_reference" == class(cdm))
+  checkmate::assertTRUE(data_check, add = errorMessage)
+  if(!isTRUE(data_check)){
+    errorMessage$push(glue::glue("- cdm input must be a cdm object"))
+  }
+  # Check if targetCohortName is a character
+  targetCohortName_format_check <- any(class(targetCohortName) %in% c("character"))
+  checkmate::assertTRUE(targetCohortName_format_check, add = errorMessage)
+  if(!isTRUE(targetCohortName_format_check)){
+    errorMessage$push(glue::glue("- targetCohortName input must be a string"))
+  }
+  # Check if targetCohortName length
+  targetCohortName_length_check <- length(targetCohortName) == 1
+  checkmate::assertTRUE(  targetCohortName_length_check, add = errorMessage)
+  if(!isTRUE(  targetCohortName_length_check)){
+    errorMessage$push(glue::glue("- targetCohortName input must have length equal to 1"))
+  }
+  # Check if targetCohortName is within the cdm object
+  targetCohortName_check <- targetCohortName %in% names(cdm)
+  checkmate::assertTRUE(targetCohortName_check, add = errorMessage)
+  if(!isTRUE(targetCohortName_check)){
+    errorMessage$push(glue::glue("- cdm input has not table named {targetCohortName}"))
+  }
+  # Check if observation period is within the cdm object
+  observation_period_check <- "observation_period" %in% names(cdm)
+  checkmate::assertTRUE(observation_period_check , add = errorMessage)
+  if(!isTRUE(observation_period_check)){
+    errorMessage$push(glue::glue("- cdm input has not table named 'observation_period'"))
+  }
+  # Check if targetCohortId is a numeric value
+  if(!is.null(targetCohortId)){
+    targetCohortId_format_check <- any(class(targetCohortId) %in% c("numeric","double","integer"))
+    checkmate::assertTRUE(targetCohortId_format_check, add = errorMessage)
+    if(!isTRUE(targetCohortId_format_check)){
+      errorMessage$push(glue::glue("- targetCohortId input must be numeric"))
+    }
+  }
+  # Check if targetCohortId is in the cohort_definition_id
+  if(!is.null(targetCohortId)){
+    rows <- cdm[[targetCohortName]] %>% dplyr::filter(.data$cohort_definition_id %in% targetCohortId) %>% dplyr::tally() %>% dplyr::pull()
+    targetCohortId_check <- rows != 0
+    checkmate::assertTRUE(targetCohortId_check, add = errorMessage)
+    if(!isTRUE(targetCohortId_check)){
+      errorMessage$push(glue::glue("- {name} table does not containg '{targetCohortId}' as a cohort_definition_id"))
+    }
+  }
+  checkmate::reportAssertions(collection = errorMessage)
+  return(invisible(TRUE))
+}
+randomPrefix <- function(n = 5) {
+  paste0(
+    "temp_", paste0(sample(letters, 5, TRUE), collapse = ""), "_", collapse = ""
+  )
+}

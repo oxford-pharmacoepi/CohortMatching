@@ -79,3 +79,25 @@ test_that("test exactMatchingCohort works if there are no subjects", {
     )
   )
 })
+
+test_that("test exactMatchingCohort works if one of the cohorts does not have any people", {
+  followback  <- 180
+  cdm <- DrugUtilisation::generateConceptCohortSet(
+    cdm = DrugUtilisation::mockDrugUtilisation(numberIndividuals = 200),
+    conceptSet = list(c1 = 317009, c2 = 1),
+    name = "cases",
+    end  = "observation_period_end_date",
+    requiredObservation = c(followback,followback),
+    overwrite = TRUE
+  )
+
+
+  expect_no_error(
+    a <- exactMatchingCohort(
+      cdm,
+      name = "new_cohort",
+      targetCohortName = "cases",
+    )
+  )
+})
+
