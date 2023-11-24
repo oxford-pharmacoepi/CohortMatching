@@ -30,6 +30,9 @@ generateMatchedCohort <- function(cdm,
     matchYearOfBirth = matchYearOfBirth, ratio = ratio
   )
 
+  # table prefix
+  tablePrefix <- randomPrefix()
+
   # check there are individuals
 
   # get targetCohortId
@@ -54,6 +57,9 @@ generateMatchedCohort <- function(cdm,
                              matchSex  = matchSex,
                              matchYearOfBirth = matchYearOfBirth,
                              ratio = ratio)
+
+  # Delete permanent tables
+  CDMConnector::dropTable(cdm = cdm, name = dplyr::starts_with(tablePrefix))
 
   # Return
   return(cdm)
@@ -437,4 +443,9 @@ validateInput <- function(cdm,
   }
   checkmate::reportAssertions(collection = errorMessage)
   return(invisible(TRUE))
+}
+randomPrefix <- function(n = 5) {
+  paste0(
+    "temp_", paste0(sample(letters, 5, TRUE), collapse = ""), "_", collapse = ""
+  )
 }
