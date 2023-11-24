@@ -5,5 +5,8 @@ CohortMatching contains a function to perform exact matching between a cohort an
 
 ## Package installation
 You can install the latest version of CohortMatching like so:
+
+```
 install.packages("remotes")
 remotes::install_github("oxford-pharmacoepi/CohortMatching")
+```
