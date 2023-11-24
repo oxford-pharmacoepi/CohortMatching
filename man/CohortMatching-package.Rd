@@ -9,7 +9,7 @@
 This package provide functions and tools to create matched cohorts using the OMOP Common Data Model.
 }
 \author{
-\strong{Maintainer}: Marta Alcalde-Herraiz \email{marta.alcaldeherraiz@ndorms.ox.ac.uk}
+\strong{Maintainer}: Marta Alcalde-Herraiz \email{marta.alcaldeherraiz@ndorms.ox.ac.uk} (\href{https://orcid.org/0009-0002-4405-1814}{ORCID})
 
 Authors:
 \itemize{
