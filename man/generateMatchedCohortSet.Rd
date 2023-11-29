@@ -34,7 +34,7 @@ matched.}
 \item{ratio}{Number of allowed matches per individual in the target cohort.}
 }
 \value{
-A cdm reference object that containd the new generated cohort set.
+A cdm reference object that contains the new generated cohort set.
 }
 \description{
 Generate a new cohort matched cohort from a preexisting target cohort. The
