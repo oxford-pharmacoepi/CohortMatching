@@ -16,6 +16,7 @@
 #'
 #' @export
 #'
+#'
 generateMatchedCohortSet <- function(cdm,
                                   name,
                                   targetCohortName,
@@ -31,43 +32,40 @@ generateMatchedCohortSet <- function(cdm,
   )
 
   # table prefix
-  tablePrefix <- randomPrefix()
-
+  #tablePrefix <- randomPrefix()
   cohort <- cdm[[targetCohortName]]
 
   # get the number of cohorts
-  n <- getNumberOfCohorts(cohort)
+  n <- getNumberOfCohorts(cdm, targetCohortName)
 
-  # create temporal cases and controls cohorts
-  cdm <- createTemporalCohorts(cdm, n, targetCohortName, tablePrefix)
+  # get target cohort id
+  targetCohortId <- getTargetCohortId(cdm, targetCohortId, targetCohortName)
 
-  # get targetCohortId
-  var <- getTargetCohortId(cohort, targetCohortId)
-  cohort_set_ref <- var$cohort_set_ref
-  targetCohortId <- var$targetCohortId
+  # Create the cohort name with cases and controls of the targetCohortId
+  cdm <- getNewCohort(cdm, name, targetCohortName, targetCohortId, n)
 
-  # cols to match
+  # Exclude cases from controls
+  cdm <- excludeCases(cdm, name, targetCohortId, n)
+
+  # get matched tables
   matchCols <- getMatchCols(matchSex, matchYearOfBirth)
 
-  # get cases
-  cases <- getCases(cdm, matchCols, cohort)
+  if(!is.null(matchCols)){
+    # Exclude individuals without any match
+    cdm <- excludeNoMatchedIndividuals(cdm, name, matchCols, n)
 
-  # get controls
-  var <- getControls(cdm, matchCols, cohort, targetCohortId, tablePrefix, n)
-  cdm      <- var$cdm
-  controls <- var$controls
+    # Match as ratio was infinite
+    cdm <- infiniteMatching(cdm, name, targetCohortId)
 
-  # match pairs
-  var <- matchPairs(cdm, cases, controls, cohort, matchCols, ratio, n, targetCohortId, tablePrefix)
-  cdm      <- var$cdm
-  matches1 <- var$matches1
+    # Delete controls that are not in observation
+    cdm <- checkObservationPeriod(cdm, name, targetCohortId, n)
 
-  # output a cohort object
-  cdm <- getOutputCohortObject(cdm, matches1, cohort_set_ref, name, matchSex, matchYearOfBirth, tablePrefix, n)
+    # Check ratio
+    cdm <- checkRatio(cdm, name, ratio, targetCohortId, n)
 
-  # Delete permanent tables
-  CDMConnector::dropTable(cdm = cdm, name = dplyr::starts_with(tablePrefix))
-
+    # Check cohort set ref
+    cdm <- checkCohortSetRef(cdm, name, matchSex, matchYearOfBirth, targetCohortId, n)
+  }
   # Return
   return(cdm)
 }
@@ -133,15 +131,17 @@ validateInput <- function(cdm,
 }
 
 
+
 randomPrefix <- function(n = 5) {
   paste0(
     "temp_", paste0(sample(letters, 5, TRUE), collapse = ""), "_", collapse = ""
   )
 }
 
-getNumberOfCohorts <- function(cohort){
+
+getNumberOfCohorts <- function(cdm, targetCohortName){
   # Read number of cohorts
-  n <- cohort %>%
+  n <- cdm[[targetCohortName]] %>%
     dplyr::summarise(v = max(.data$cohort_definition_id)) %>%
     dplyr::pull(.data$v) # number of different cohorts
 
@@ -151,62 +151,109 @@ getNumberOfCohorts <- function(cohort){
   return(n)
 }
 
-createTemporalCohorts <- function(cdm, n, targetCohortName, tablePrefix){
-  if(n == 0){
-    cdm[[paste0(tablePrefix,"controls")]] <- cdm[[targetCohortName]]
-    cdm[[paste0(tablePrefix,"cases")]]    <- cdm[[targetCohortName]]
 
+getTargetCohortId <- function(cdm, targetCohortId, targetCohortName){
+  if(is.null(targetCohortId)){
+    targetCohortId <- CDMConnector::cohortSet(cdm[[targetCohortName]]) %>%
+      dplyr::arrange(.data$cohort_definition_id) %>%
+      dplyr::pull("cohort_definition_id")
+  }
+
+  return(targetCohortId)
+}
+
+
+getNewCohort <- function(cdm, name, targetCohortName, targetCohortId, n){
+  if(n == 0){
+    cdm[[name]] <- CDMConnector::new_generated_cohort_set(
+      cohort_ref = cdm[[targetCohortName]],
+      cohort_attrition_ref = cdm[[targetCohortName]] %>% CDMConnector::cohort_attrition(),
+      cohort_set_ref = cdm[[targetCohortName]] %>% CDMConnector::cohort_set(),
+      overwrite = TRUE)
   }else{
     # Create controls cohort
-    controls_table <- lapply(n+(1:n), function(x) {
-      cdm$person %>%
+    controls <- lapply(targetCohortId+n, function(x) {
+      cdm[["person"]] %>%
         dplyr::select("subject_id" = "person_id") %>%
         dplyr::mutate("cohort_definition_id" = .env$x)
     })
 
-    controls_table <- Reduce(dplyr::union_all, controls_table) %>%
+    # Create table with controls + cases (all cases existing in the cohort, without considering the targetCohortId)
+    all <- Reduce(dplyr::union_all, controls) %>%
       dplyr::mutate("cohort_start_date" = NA,
                     "cohort_end_date"   = NA) %>%
-      CDMConnector::computeQuery()
+      dplyr::union_all(
+        cdm[[targetCohortName]] %>%
+          dplyr::filter(.data$cohort_definition_id %in% .env$targetCohortId)
+      ) %>%
+      CDMConnector::compute_query(schema = attr(cdm, "write_schema"),
+                                  temporary = FALSE,
+                                  name = name,
+                                  overwrite = TRUE)
 
-    cdm[[paste0(tablePrefix,"controls")]] <- CDMConnector::newGeneratedCohortSet(controls_table)
+    cdm[[name]] <- CDMConnector::new_generated_cohort_set(
+      cohort_ref = all,
+      overwrite = TRUE)
 
-    newAttrition <- CDMConnector::cohort_attrition(cdm[[paste0(tablePrefix,"controls")]]) %>%
-      dplyr::mutate(reason = "Subjects in the database")
+    cohort_set_ref <- cdm[[targetCohortName]] %>%
+      CDMConnector::cohort_set() %>%
+      dplyr::filter(.data$cohort_definition_id %in% .env$targetCohortId) %>%
+      dplyr::slice(rep(1:dplyr::n(), times = 2)) %>%
+      dplyr::group_by(.data$cohort_definition_id) %>%
+      dplyr::mutate(cohort_name = dplyr::if_else(dplyr::row_number() == 2, paste0(.data$cohort_name,"_matched"), .data$cohort_name)) %>%
+      dplyr::mutate(cohort_definition_id = dplyr::if_else(dplyr::row_number() == 2, .data$cohort_definition_id+.env$n, .data$cohort_definition_id)) %>%
+      dplyr::ungroup()
 
-    cdm[[paste0(tablePrefix,"controls")]] <- CDMConnector::newGeneratedCohortSet(
-      cohortRef          = controls_table,
-      cohortAttritionRef = newAttrition,
-      overwrite          = TRUE
-    )
 
-    # Create cases cohort
-    cdm[[paste0(tablePrefix,"cases")]]    <- cdm[[targetCohortName]]
+    cohort_attrition <- CDMConnector::cohort_attrition(cdm[[name]]) %>%
+      dplyr::mutate(reason = dplyr::if_else(.data$cohort_definition_id %in% c(.env$n+(1:.env$n)), "Subjects in the database", .data$reason))
+
+
+    cdm[[name]] <- CDMConnector::new_generated_cohort_set(
+      cohort_ref = all,
+      cohort_attrition_ref = cohort_attrition,
+      cohort_set_ref = cohort_set_ref,
+      overwrite = TRUE)
   }
-
   return(cdm)
 }
 
+excludeCases <- function(cdm, name, targetCohortId, n){
+  # For each target cohort id
+  for(targetCohortId_i in targetCohortId){
+    # Controls
+    controls <- cdm[[name]] %>%
+      dplyr::select("subject_id", "cohort_definition_id") %>%
+      dplyr::filter(.data$cohort_definition_id == targetCohortId_i+.env$n) %>%
+      dplyr::anti_join(
+        # Cases
+        cdm[[name]] %>%
+          dplyr::select("subject_id","cohort_definition_id") %>%
+          dplyr::filter(.data$cohort_definition_id == targetCohortId_i) %>%
+          dplyr::mutate(cohort_definition_id = targetCohortId_i + .env$n),
+        by = c("subject_id", "cohort_definition_id")
+      )
 
-getTargetCohortId <- function(cohort, targetCohortId){
-  # Participants with the targetCohortId
-  if(!is.null(targetCohortId)){
-    # Select participants with the targetCohortId of interest
-    cohort <- cohort %>%
-      dplyr::filter(.data$cohort_definition_id %in% targetCohortId)
-    cohort_set_ref    <- CDMConnector::cohortSet(cohort) %>%
-      dplyr::arrange(.data$cohort_definition_id)
-  }else{
-    # If "targetCohortId" is null, we will do it for all the existing targetCohortId
-    targetCohortId    <- CDMConnector::cohortSet(cohort) %>%
-      dplyr::select("cohort_definition_id") %>%
-      dplyr::pull()
+    cdm[[name]] <- cdm[[name]] %>%
+      # Delete the controls
+      dplyr::filter(.data$cohort_definition_id != targetCohortId_i + .env$n) %>%
+      # Add the new controls set
+      dplyr::union_all(
+        controls %>%
+          dplyr::mutate(cohort_start_date = NA,
+                        cohort_end_date   = NA)
+      ) %>%
+      CDMConnector::computeQuery() %>%
+      CDMConnector::computeQuery(name = name, temporary = FALSE, schema = attr(cdm, "write_schema"), overwrite = TRUE)
 
-    cohort_set_ref    <- CDMConnector::cohortSet(cohort) %>%
-      dplyr::arrange(.data$cohort_definition_id)
-    targetCohortId    <- cohort_set_ref$cohort_definition_id
   }
-  return(list("cohort_set_ref" = cohort_set_ref, "targetCohortId" = targetCohortId))
+  # Record attrition
+  cdm[[name]] <- cdm[[name]] %>%
+    CDMConnector::record_cohort_attrition("Exclude cases",
+                                          cohortId = c(targetCohortId+n))%>%
+    CDMConnector::computeQuery() %>%
+    CDMConnector::computeQuery(name = name, temporary = FALSE, schema = attr(cdm, "write_schema"), overwrite = TRUE)
+  return(cdm)
 }
 
 
@@ -222,274 +269,165 @@ getMatchCols <- function(matchSex, matchYearOfBirth){
   return(matchCols)
 }
 
-
-getCases <- function(cdm, matchCols, cohort){
-  cases <- cdm$person %>%
-    dplyr::select("person_id", dplyr::any_of(.env$matchCols)) %>%
-    dplyr::right_join(
-      cohort %>%
-        dplyr::select("person_id" = "subject_id", "cohort_definition_id"),
-      by = "person_id"
+excludeNoMatchedIndividuals <- function(cdm, name, matchCols, n){
+  cdm[[name]] <- cdm[[name]] %>%
+    # Append matchcols
+    dplyr::left_join(
+      cdm[["person"]] %>%
+        dplyr::select("subject_id" = "person_id", dplyr::all_of(matchCols)),
+      by = c("subject_id")
     ) %>%
-    dplyr::rename("cases_id" = "person_id")
+    CDMConnector::computeQuery() %>%
+    CDMConnector::computeQuery(name = name, temporary = FALSE, schema = attr(cdm, "write_schema"), overwrite = TRUE)
 
-  return(cases)
-}
-
-
-getControls <- function(cdm, matchCols, cohort, targetCohortId, tablePrefix, n){
-
-  for(targetCohortId_i in targetCohortId){
-    controls_i <- cdm$person %>%
-      dplyr::select("person_id", dplyr::any_of(.env$matchCols)) %>%
-      dplyr::anti_join(
-        cohort %>%
-          dplyr::filter(.data$cohort_definition_id == targetCohortId_i) %>%
-          dplyr::select("person_id" = "subject_id"),
-        by = "person_id"
-      ) %>%
-      dplyr::mutate("cohort_definition_id" = targetCohortId_i) %>%
-      dplyr::rename("controls_id" = "person_id")
-
-    if(targetCohortId_i == targetCohortId[[1]]){
-      controls <- controls_i
-    }else{
-      controls <- controls %>%
-        dplyr::union_all(controls_i)
-    }
-  }
-  # Attrition set-up - Controls
-  cdm[[paste0(tablePrefix,"controls")]] <- cdm[[paste0(tablePrefix,"controls")]] %>%
+  # Create column group id
+  cdm[[name]] <- cdm[[name]] %>%
     dplyr::inner_join(
-      controls %>%
-        dplyr::select("subject_id" = "controls_id", "cohort_definition_id") %>%
-        dplyr::mutate("cohort_definition_id" = .data$cohort_definition_id+.env$n),
-      by = c("subject_id", "cohort_definition_id")
+      cdm[[name]] %>%
+        dplyr::select(dplyr::all_of(matchCols)) %>%
+        dplyr::distinct() %>%
+        dplyr::mutate(group_id = dplyr::row_number()),
+      by = c(matchCols)
     ) %>%
-    CDMConnector::record_cohort_attrition("Exclude cases",
-                                          cohortId = c(targetCohortId,targetCohortId+n))
+    dplyr::select(-dplyr::all_of(matchCols)) %>%
+    # Create target definition id column
+    dplyr::mutate(target_definition_id =
+                    dplyr::if_else(
+                      .data$cohort_definition_id <= .env$n,
+                      .data$cohort_definition_id,
+                      .data$cohort_definition_id - .env$n
+                    )) %>%
+    CDMConnector::compute_query() %>%
+    CDMConnector::computeQuery(name = name, temporary = FALSE, schema = attr(cdm, "write_schema"), overwrite = TRUE)
 
-  return(list("cdm" = cdm, "controls" = controls))
+  # Exclude individuals that do not have any match
+  cdm[[name]] <- cdm[[name]] %>%
+    dplyr::inner_join(
+      cdm[[name]] %>%
+        dplyr::mutate(
+          "cohort_definition_id" = dplyr::if_else(
+            .data$target_definition_id == .data$cohort_definition_id,
+            .data$cohort_definition_id + .env$n,
+            .data$cohort_definition_id - .env$n
+          )
+        ) %>%
+        dplyr::select("cohort_definition_id", "target_definition_id", "group_id") %>%
+        dplyr::distinct(),
+      by = c("target_definition_id", "group_id", "cohort_definition_id")
+    ) %>%
+    CDMConnector::compute_query() %>%
+    CDMConnector::compute_query(name = name, temporary = FALSE, schema = attr(cdm, "write_schema"), overwrite = TRUE) %>%
+    CDMConnector::record_cohort_attrition("Exclude individuals that do not have any match")
+
+  return(cdm)
 }
 
 
-
-matchPairs <- function(cdm, cases, controls, cohort, matchCols, ratio, n, targetCohortId, tablePrefix){
-
-  # Matching - if there is more than one match, choose one pair at random
-  cases1 <- cases %>%
+infiniteMatching <- function(cdm, name, targetCohortId){
+  # Create pair id to perform a random match
+  cdm[[name]] <- cdm[[name]] %>%
     dplyr::mutate(id = dbplyr::sql("random()")) %>%
-    dplyr::group_by(.data$cohort_definition_id, dplyr::across(.env$matchCols)) %>%
+    dplyr::group_by(.data$cohort_definition_id, .data$group_id) %>%
     dbplyr::window_order(.data$id) %>%
     dplyr::mutate(pair_id = dplyr::row_number()) %>%
-    dbplyr::window_order() %>%
     dplyr::select(-"id") %>%
-    CDMConnector::computeQuery()
-
-  controls1 <- controls %>%
-    dplyr::mutate(id = dbplyr::sql("random()")) %>%
-    dplyr::group_by(.data$cohort_definition_id, dplyr::across(.env$matchCols)) %>%
-    dbplyr::window_order(.data$id) %>%
-    dplyr::mutate(pair_id = dplyr::row_number()) %>%
-    dbplyr::window_order() %>%
-    dplyr::select(-"id")%>%
-    CDMConnector::computeQuery()
-
-  check_nums <- controls1 %>% dplyr::ungroup() %>% dplyr::group_by(.data$cohort_definition_id) %>% dplyr::summarise(n_controls = dplyr::n()) %>%
-    dplyr::left_join(
-      cases1 %>% dplyr::ungroup() %>% dplyr::group_by(.data$cohort_definition_id) %>% dplyr::summarise(n_cases = dplyr::n()),
-      by = "cohort_definition_id"
-    ) %>%
-    dplyr::mutate(state = .data$n_controls > .data$n_cases) %>%
-    dplyr::filter(.data$state == FALSE)
-
-  if(!is.na(nrow(check_nums))){
-    warning("Number of cases in one of the cohorts is higher than number of controls. Ratio is set to 1.")
-    ratio <- 1
-  }
-
-  matches_table <- cases1 %>%
-    dplyr::inner_join(
-      controls1,
-      by = c("pair_id","cohort_definition_id", matchCols)
-    )
-
-  # If ratio is not one, it works, but is not necessary do it as matches_1 = matches_table
-  if(ratio != 1){
-    matches_table_1 <- matches_table %>%
-      dplyr::mutate(max_cases = max(.data$pair_id)) %>%
-      dplyr::select(-"cases_id") %>%
-      dplyr::right_join(
-        controls1,
-        by = c("pair_id", "cohort_definition_id", "gender_concept_id", "year_of_birth", "controls_id")
-      ) %>%
-      dplyr::mutate(max_cases =
-                      dplyr::if_else(is.na(.data$max_cases), max(.data$max_cases, na.rm = TRUE), .data$max_cases)
-      ) %>%
-      dplyr::filter(!is.na(.data$max_cases)) # No matching
-    if(ratio == "Inf"){
-      matches_table_1 <- matches_table_1 %>%
-        dplyr::mutate(ratio = max(.data$pair_id)/.data$max_cases)
-    }else{
-      matches_table_1 <- matches_table_1 %>%
-        dplyr::mutate(ratio = .env$ratio)
-    }
-
-    matches_table_1 <- matches_table_1 %>%
-      dplyr::mutate(pair_id1 =
-                      dplyr::if_else(.data$max_cases < .data$pair_id,
-                                     .data$pair_id - .data$max_cases*(.data$ratio-1),
-                                     .data$pair_id)) %>%
-      dplyr::mutate(pair_id = .data$pair_id1) %>%
-      dplyr::select(-"pair_id1", -"max_cases", -"ratio") %>%
-      dplyr::inner_join(
-        cases1,
-        by = c("pair_id", "cohort_definition_id", matchCols)
-      ) %>%
-      dplyr::union_all(
-        matches_table
-      ) %>%
-      dplyr::distinct()
-
-    matches_table <-  matches_table_1 %>%
-      CDMConnector::compute_query()
-  }else{
-    matches_table <-  matches_table %>%
-      CDMConnector::compute_query()
-  }
-
-
-  #  Attrition set-up - Controls
-  cdm[[paste0(tablePrefix,"controls")]] <- cdm[[paste0(tablePrefix,"controls")]] %>%
-    dplyr::inner_join(
-      matches_table %>%
-        dplyr::ungroup() %>%
-        dplyr::select("subject_id" = "controls_id", "cohort_definition_id") %>%
-        dplyr::mutate("cohort_definition_id" = .data$cohort_definition_id+n),
-      by = c("subject_id", "cohort_definition_id")
-    ) %>%
-    CDMConnector::record_cohort_attrition("Subjects with matched pair",
-                                          cohortId = c(targetCohortId+n))
-
-  #  Attrition set-up - Cases
-  cdm[[paste0(tablePrefix,"cases")]] <- cdm[[paste0(tablePrefix,"cases")]] %>%
-    dplyr::inner_join(
-      matches_table %>%
-        dplyr::ungroup() %>%
-        dplyr::select("subject_id" = "cases_id", "cohort_definition_id"),
-      by = c("subject_id", "cohort_definition_id")
-    ) %>%
-    CDMConnector::record_cohort_attrition("Subjects with matched pair",
-                                          cohortId = c(targetCohortId))
-
-  matches1 <-  matches_table %>%
-    # Remove those pairs where the control individual was not in observation at index date
-    dplyr::left_join(
-      cdm$observation_period %>%
-        dplyr::select("controls_id" = "person_id", "observation_period_start_date", "observation_period_end_date"),
-      by = "controls_id"
-    ) %>%
-    dplyr::left_join(
-      cohort %>%
-        dplyr::select("cases_id" = "subject_id", "cohort_start_date","cohort_end_date","cohort_definition_id"),
-      by = c("cases_id","cohort_definition_id")
-    ) %>%
-    dplyr::filter(
-      .data$cohort_start_date >= .data$observation_period_start_date,
-      .data$cohort_start_date <= .data$observation_period_end_date
-    ) %>%
     dplyr::ungroup() %>%
-    dplyr::select("cases_id", "controls_id", "cohort_definition_id", "cohort_start_date","cohort_end_date")
+    CDMConnector::computeQuery() %>%
+    CDMConnector::computeQuery(name = name, temporary = FALSE, schema = attr(cdm, "write_schema"), overwrite = TRUE)
 
-  #  Attrition set-up - Controls
-  cdm[[paste0(tablePrefix,"controls")]] <- cdm[[paste0(tablePrefix,"controls")]] %>%
+  cdm[[name]] <- cdm[[name]] %>%
     dplyr::inner_join(
-      matches1 %>%
-        dplyr::select("subject_id" = "controls_id", "cohort_definition_id") %>%
-        dplyr::mutate("cohort_definition_id" = .data$cohort_definition_id+n),
-      by = c("subject_id", "cohort_definition_id")
+      # Calculate the maximum number of cases per group
+      cdm[[name]] %>%
+        dplyr::filter(.data$cohort_definition_id %in% .env$targetCohortId) %>%
+        dplyr::group_by(.data$cohort_definition_id, .data$group_id) %>%
+        dplyr::mutate(max_cases = max(.data$pair_id)) %>%
+        dplyr::ungroup() %>%
+        dplyr::select("group_id", "target_definition_id", "max_cases"),
+      by = c("group_id", "target_definition_id")
     ) %>%
-    CDMConnector::record_cohort_attrition("Pair in observation during the index date",
-                                          cohortId = c(targetCohortId+n))
+    # Calculate the maximum ratio per group
+    dplyr::mutate(id = (.data$pair_id-1) %% .data$max_cases + 1) %>%
+    dplyr::mutate(pair_id = .data$id) %>%
+    dplyr::select(-"max_cases", -"id") %>%
+    CDMConnector::compute_query() %>%
+    CDMConnector::computeQuery(name = name, temporary = FALSE, schema = attr(cdm, "write_schema"), overwrite = TRUE)
 
-  #  Attrition set-up - Cases
-  cdm[[paste0(tablePrefix,"cases")]] <- cdm[[paste0(tablePrefix,"cases")]] %>%
+
+  # Perform random matches with ratio 1:Inf
+  cdm[[name]] <- cdm[[name]] %>%
+    dplyr::select(-"cohort_start_date", -"cohort_end_date") %>%
     dplyr::inner_join(
-      matches1 %>%
-        dplyr::select("subject_id" = "cases_id", "cohort_definition_id"),
-      by = c("subject_id", "cohort_definition_id")
+      # Cohort start date and end date of cases
+      cdm[[name]] %>%
+        dplyr::filter(!is.na(.data$cohort_start_date), !is.na(.data$cohort_end_date)) %>%
+        dplyr::select("pair_id", "group_id", "target_definition_id", "cohort_start_date", "cohort_end_date"),
+      by = c("pair_id", "group_id", "target_definition_id")
     ) %>%
-    CDMConnector::record_cohort_attrition("Pair in observation during the index date",
-                                          cohortId = c(targetCohortId))
+    dplyr::distinct() %>%
+    CDMConnector::compute_query() %>%
+    CDMConnector::computeQuery(name = name, temporary = FALSE, schema = attr(cdm, "write_schema"), overwrite = TRUE)
+  return(cdm)
+}
 
-  return(list("cdm" = cdm, "matches1" = matches1))
+checkObservationPeriod <- function(cdm, name, targetCohortId, n){
+  cdm[[name]] <- cdm[[name]] %>%
+    PatientProfiles::addFutureObservation() %>%
+    dplyr::filter(!is.na(.data$future_observation)) %>%
+    dplyr::mutate(cohort_end_date = dplyr::if_else(
+      .data$cohort_definition_id %in% .env$targetCohortId,
+      .data$cohort_end_date,
+      as.Date(!!CDMConnector::dateadd("cohort_start_date", "future_observation"))
+    )) %>%
+    dplyr::select(-"future_observation") %>%
+    dplyr::group_by(.data$target_definition_id, .data$group_id, .data$pair_id) %>%
+    dplyr::filter(dplyr::n() > 1) %>%
+    dplyr::ungroup() %>%
+    CDMConnector::compute_query() %>%
+    CDMConnector::compute_query(name = name, temporary = FALSE, schema = attr(cdm, "write_schema"), overwrite = TRUE) %>%
+    CDMConnector::record_cohort_attrition("Exclude individuals that are not in observation", cohortId = targetCohortId + n) %>%
+    CDMConnector::record_cohort_attrition("Exclude individuals that their only pair is not in observation", cohortId = targetCohortId)
+  return(cdm)
 }
 
 
-getOutputCohortObject <- function(cdm, matches1, cohort_set_ref, name, matchSex, matchYearOfBirth, tablePrefix, n){
-
-  cohort_ref <- matches1 %>%
-    dplyr::select(-"controls_id") %>%
-    dplyr::rename("subject_id" = "cases_id") %>%
-    dplyr::union_all(
-      matches1 %>%
-        dplyr::select(-"cases_id") %>%
-        dplyr::rename("subject_id" = "controls_id") %>%
-        dplyr::mutate(cohort_definition_id = .data$cohort_definition_id + 0.5)
-    )
-
-  if(n != 0){
-    cohort_set_ref <- cohort_set_ref %>%
-      dplyr::select("cohort_definition_id", "cohort_name") %>%
-      dplyr::union_all(
-        cohort_set_ref %>%
-          dplyr::select("cohort_definition_id", "cohort_name") %>%
-          dplyr::mutate(cohort_definition_id = .data$cohort_definition_id + 0.5) %>%
-          dplyr::mutate(cohort_name = paste0(.data$cohort_name,"_matched"))
-      ) %>%
-      dplyr::mutate(target_cohort_name = .env$name) %>%
-      dplyr::mutate(match_sex          = .env$matchSex) %>%
-      dplyr::mutate(math_year_of_birth = .env$matchYearOfBirth) %>%
-      dplyr::mutate(match_status       = dplyr::if_else(grepl(".5", .data$cohort_definition_id),
-                                                        "matched",
-                                                        "target")) %>%
-      dplyr::mutate("target_cohort_id" = floor(.data$cohort_definition_id)) %>%
-      dplyr::mutate("cohort_definition_id" = dplyr::if_else(grepl(".5", .data$cohort_definition_id),
-                                                            .data$cohort_definition_id+.env$n-0.5,
-                                                            .data$cohort_definition_id))
-    cohort_ref <- cohort_ref %>%
-      dplyr::mutate(cohort_definition_id = dplyr::if_else(grepl(".5", .data$cohort_definition_id),
-                                                          .data$cohort_definition_id+.env$n-0.5,
-                                                          .data$cohort_definition_id)) %>%
-      CDMConnector::compute_query(temporary = FALSE,
-                                  schema    = attr(cdm, "write_schema"),
-                                  name      = name,
-                                  overwrite = TRUE)
-
+checkRatio <- function(cdm, name, ratio, targetCohortId, n){
+  if(ratio == Inf){
+    cdm[[name]] <- cdm[[name]] %>%
+      dplyr::select("cohort_definition_id", "subject_id", "cohort_start_date", "cohort_end_date") %>%
+      CDMConnector::compute_query() %>%
+      CDMConnector::compute_query(name = name, temporary = FALSE, schema = attr(cdm, "write_schema"), overwrite = TRUE)
   }else{
-    cohort_ref <- cohort_ref %>%
-      CDMConnector::compute_query(temporary = FALSE,
-                                  schema    = attr(cdm, "write_schema"),
-                                  name      = name,
-                                  overwrite = TRUE)
-
+    cdm[[name]] <- cdm[[name]] %>%
+      dplyr::group_by(.data$pair_id, .data$group_id, .data$target_definition_id) %>%
+      dbplyr::window_order(.data$cohort_definition_id) %>%
+      dplyr::filter(dplyr::row_number() <= .env$ratio+1) %>%
+      dplyr::ungroup() %>%
+      dplyr::select("cohort_definition_id", "subject_id", "cohort_start_date", "cohort_end_date") %>%
+      CDMConnector::compute_query() %>%
+      CDMConnector::compute_query(name = name, temporary = FALSE, schema = attr(cdm, "write_schema"), overwrite = TRUE) %>%
+      CDMConnector::record_cohort_attrition("Exclude individuals that do not fulfil the ratio", cohortId = targetCohortId+n)
   }
 
-  # Set-up attrition
-  attrition <- CDMConnector::cohort_attrition(cdm[[paste0(tablePrefix,"controls")]]) %>%
-    dplyr::union_all(
-      CDMConnector::cohort_attrition(cdm[[paste0(tablePrefix,"cases")]])
-    ) %>%
-    dplyr::arrange(.data$cohort_definition_id)
 
-  new_cohort <- CDMConnector::newGeneratedCohortSet(
-    cohortRef    = cohort_ref,
-    cohortSetRef = cohort_set_ref,
-    cohortAttritionRef = attrition,
-    overwrite    = TRUE
-  )
+  return(cdm)
+}
 
-  cdm[[name]] <- new_cohort
+
+checkCohortSetRef <- function(cdm, name, matchSex, matchYearOfBirth, targetCohortId, n){
+  cohort_set_ref <- cdm[[name]] %>%
+    CDMConnector::cohort_set() %>%
+    dplyr::mutate(target_cohort_name  = .env$name) %>%
+    dplyr::mutate(match_sex           = .env$matchSex) %>%
+    dplyr::mutate(match_year_of_birth = .env$matchYearOfBirth) %>%
+    dplyr::mutate(match_status        = dplyr::if_else(.data$cohort_definition_id %in% .env$targetCohortId, "target", "matched")) %>%
+    dplyr::mutate(target_cohort_id    = dplyr::if_else(.data$cohort_definition_id %in% .env$targetCohortId, .data$cohort_definition_id, .data$cohort_definition_id-n))
+
+  cdm[[name]] <- CDMConnector::new_generated_cohort_set(
+    cohort_ref = cdm[[name]],
+    cohort_attrition_ref = cdm[[name]] %>% CDMConnector::cohort_attrition(),
+    cohort_set_ref = cohort_set_ref,
+    overwrite = TRUE)
 
   return(cdm)
 }

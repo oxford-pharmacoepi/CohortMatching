@@ -1,4 +1,5 @@
 rm(list = ls())
+
 library("magrittr")
 # Variables ====================================================================
 cdm <- DrugUtilisation::generateConceptCohortSet(
@@ -15,47 +16,8 @@ targetCohortName <- "cases"
 targetCohortId <- NULL
 matchSex <- TRUE
 matchYearOfBirth <- TRUE
-ratio <- Inf
+ratio <- 2
 
 
 
 # Function =====================================================================
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

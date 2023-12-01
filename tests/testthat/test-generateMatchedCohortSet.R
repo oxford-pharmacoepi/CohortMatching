@@ -10,7 +10,8 @@ test_that("generateMatchedCohortSet runs without errors", {
 
   expect_no_error(a <- generateMatchedCohortSet(cdm,
                                                 name = "new_cohort",
-                                                targetCohortName = "cases"))
+                                                targetCohortName = "cases",
+                                                ratio = 2))
 
   cdm <- DrugUtilisation::generateConceptCohortSet(
     cdm = DrugUtilisation::mockDrugUtilisation(numberIndividuals = 200),
@@ -46,19 +47,19 @@ test_that("generateMatchedCohortSet runs without errors", {
                                            matchYearOfBirth = FALSE,
                                            targetCohortName = "cases"))
 
-  expect_no_error(generateMatchedCohortSet(cdm,
+  expect_no_error(b <- generateMatchedCohortSet(cdm,
                                            name = "new_cohort",
                                            matchSex = FALSE,
                                            matchYearOfBirth = FALSE,
                                            targetCohortName = "cases"))
 
-  expect_no_error(generateMatchedCohortSet(cdm,
+  expect_no_error(a <- generateMatchedCohortSet(cdm,
                                            name = "new_cohort",
                                            targetCohortName = "cases",
                                            targetCohortId = c(1,2),
                                            matchSex = TRUE,
                                            matchYearOfBirth = TRUE,
-                                           ratio = 8))
+                                           ratio = 2))
 
   })
 
